@@ -87,6 +87,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void injectElevenLabsPatch() {
         String js = "(()=>{try{" +
+                "const K='daqesh_azure_voice_v1';" +
                 "const b=document.getElementById('voiceSettingsBtn');" +
                 "if(b&&!b.dataset.eleven){const n=b.cloneNode(true);n.dataset.eleven='1';" +
                 "let vn='';try{vn=AndroidBridge.getVoiceName()||''}catch(e){};" +
@@ -94,15 +95,18 @@ public class MainActivity extends AppCompatActivity {
                 "n.onclick=()=>{try{AndroidBridge.openVoiceSettings()}catch(e){}}}" +
                 "if(!window.__elevenFetchPatched){const oldFetch=window.fetch.bind(window);" +
                 "const silent=new Uint8Array([82,73,70,70,36,0,0,0,87,65,86,69,102,109,116,32,16,0,0,0,1,0,1,0,68,172,0,0,136,88,1,0,2,0,16,0,100,97,116,97,0,0,0,0]);" +
+                "const rankWords=['الأول','الثاني','الثالث','الرابع','الخامس','السادس','السابع','الثامن','التاسع','العاشر'];" +
+                "function rankingText(){const cards=[...document.querySelectorAll('#cards .card')];if(!cards.length)return'';let t='ترتيب اللاعبين بعد الجولة. ';cards.forEach((c,i)=>{const name=(c.querySelector('.pname')?.textContent||'').trim();const bal=(c.querySelector('.balance')?.textContent||'').trim();if(name)t+='المركز '+(rankWords[i]||String(i+1))+'، '+name+'، برصيد '+bal+'. ';});const w=document.getElementById('winner');if(w&&!w.classList.contains('hidden'))t+=' '+(w.textContent||'');return t}" +
                 "window.fetch=async(u,o={})=>{const x=String(u||'');if(x.includes('.tts.speech.microsoft.com')){" +
                 "let t='';try{t=new DOMParser().parseFromString(String(o.body||''),'application/xml').documentElement.textContent||''}catch(e){t=String(o.body||'').replace(/<[^>]+>/g,' ')};" +
+                "if(t.trim().startsWith('خلصنا الجولة')){const rt=rankingText();if(rt)t=rt}" +
                 "try{AndroidBridge.speakEleven(t)}catch(e){};return new Response(silent,{status:200,headers:{'Content-Type':'audio/wav'}})}return oldFetch(u,o)};window.__elevenFetchPatched=true}" +
-                "window.onElevenConfigured=()=>{localStorage.setItem('dq_voice',JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()};" +
-                "window.onElevenDisabled=()=>{localStorage.setItem('dq_voice',JSON.stringify({engine:'device',region:'',key:''}));location.reload()};" +
+                "window.onElevenConfigured=()=>{localStorage.setItem(K,JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()};" +
+                "window.onElevenDisabled=()=>{localStorage.setItem(K,JSON.stringify({engine:'device',region:'',key:''}));location.reload()};" +
                 "window.onElevenSpeechError=(m)=>{const e=document.getElementById('toast');if(e){e.textContent='تعذر ElevenLabs: '+(m||'خطأ');e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),2200)}};" +
                 "let ok=false;try{ok=AndroidBridge.isElevenConfigured()}catch(e){};" +
-                "let q={};try{q=JSON.parse(localStorage.getItem('dq_voice')||'{}')}catch(e){};" +
-                "if(ok&&q.engine!=='hamed'){localStorage.setItem('dq_voice',JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()}" +
+                "let q={};try{q=JSON.parse(localStorage.getItem(K)||'{}')}catch(e){};" +
+                "if(ok&&(q.engine!=='hamed'||q.region!=='eleven'||q.key!=='eleven')){localStorage.setItem(K,JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()}" +
                 "}catch(e){console.log(e)}})();";
         webView.evaluateJavascript(js, null);
     }
@@ -218,7 +222,7 @@ public class MainActivity extends AppCompatActivity {
             voicePrefs.edit().putString(P_KEY, key).putString(P_VOICE_ID, id).putString(P_VOICE_NAME, name).apply();
             dialog.dismiss();
             webView.evaluateJavascript("window.onElevenConfigured&&window.onElevenConfigured()", null);
-            executor.execute(() -> requestSpeech("هلا والله، صوت داقش جاهز. خلنا نبدأ الجولة.", key, id));
+            executor.execute(() -> requestSpeech("هلا والله، صوت داقش جاهز. بعد كل جولة بعطيك ترتيب اللاعبين.", key, id));
         }));
 
         dialog.show();
