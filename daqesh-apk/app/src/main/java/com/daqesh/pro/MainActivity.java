@@ -93,14 +93,16 @@ public class MainActivity extends AppCompatActivity {
                 "let vn='';try{vn=AndroidBridge.getVoiceName()||''}catch(e){};" +
                 "n.textContent='🎙️ '+(vn||'ElevenLabs');b.replaceWith(n);" +
                 "n.onclick=()=>{try{AndroidBridge.openVoiceSettings()}catch(e){}}}" +
+                "const rankWords=['الأول','الثاني','الثالث','الرابع','الخامس','السادس','السابع','الثامن','التاسع','العاشر'];" +
+                "function balancesText(){const cards=[...document.querySelectorAll('#cards .card')];if(!cards.length)return'';let t='أرصدة اللاعبين الحالية. ';cards.forEach((c,i)=>{const name=(c.querySelector('.pname')?.textContent||'').trim();const bal=(c.querySelector('.balance')?.textContent||'').trim();if(name)t+=(rankWords[i]?'المركز '+rankWords[i]+'، ':'')+name+'، معك '+bal+'. ';});const w=document.getElementById('winner');if(w&&!w.classList.contains('hidden'))t+=' '+(w.textContent||'');return t}" +
+                "const tb=document.querySelector('.toolbar');if(tb&&!document.getElementById('announceNowBtn')){const a=document.createElement('button');a.id='announceNowBtn';a.type='button';a.textContent='🔊 إعلان الأرصدة';a.className='primary';a.addEventListener('click',()=>{try{const t=balancesText();if(!t)return;AndroidBridge.speakEleven(t)}catch(e){}});tb.appendChild(a)}" +
+                "if(!window.__daqeshRoundDirect){document.addEventListener('click',e=>{const btn=e.target&&e.target.closest?e.target.closest('#saveRound'):null;if(!btn)return;setTimeout(()=>{try{if(!AndroidBridge.isElevenConfigured())return;const st=document.getElementById('soundToggle');if(st&&st.textContent.includes('متوقف'))return;const t=balancesText();if(t)AndroidBridge.speakEleven('خلصنا الجولة. '+t)}catch(err){}},700)},true);window.__daqeshRoundDirect=true}" +
                 "if(!window.__elevenFetchPatched){const oldFetch=window.fetch.bind(window);" +
                 "const silent=new Uint8Array([82,73,70,70,36,0,0,0,87,65,86,69,102,109,116,32,16,0,0,0,1,0,1,0,68,172,0,0,136,88,1,0,2,0,16,0,100,97,116,97,0,0,0,0]);" +
-                "const rankWords=['الأول','الثاني','الثالث','الرابع','الخامس','السادس','السابع','الثامن','التاسع','العاشر'];" +
-                "function rankingText(){const cards=[...document.querySelectorAll('#cards .card')];if(!cards.length)return'';let t='ترتيب اللاعبين بعد الجولة. ';cards.forEach((c,i)=>{const name=(c.querySelector('.pname')?.textContent||'').trim();const bal=(c.querySelector('.balance')?.textContent||'').trim();if(name)t+='المركز '+(rankWords[i]||String(i+1))+'، '+name+'، برصيد '+bal+'. ';});const w=document.getElementById('winner');if(w&&!w.classList.contains('hidden'))t+=' '+(w.textContent||'');return t}" +
                 "window.fetch=async(u,o={})=>{const x=String(u||'');if(x.includes('.tts.speech.microsoft.com')){" +
                 "let t='';try{t=new DOMParser().parseFromString(String(o.body||''),'application/xml').documentElement.textContent||''}catch(e){t=String(o.body||'').replace(/<[^>]+>/g,' ')};" +
-                "if(t.trim().startsWith('خلصنا الجولة')){const rt=rankingText();if(rt)t=rt}" +
-                "try{AndroidBridge.speakEleven(t)}catch(e){};return new Response(silent,{status:200,headers:{'Content-Type':'audio/wav'}})}return oldFetch(u,o)};window.__elevenFetchPatched=true}" +
+                "if(!t.trim().startsWith('خلصنا الجولة')){try{AndroidBridge.speakEleven(t)}catch(e){}}" +
+                "return new Response(silent,{status:200,headers:{'Content-Type':'audio/wav'}})}return oldFetch(u,o)};window.__elevenFetchPatched=true}" +
                 "window.onElevenConfigured=()=>{localStorage.setItem(K,JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()};" +
                 "window.onElevenDisabled=()=>{localStorage.setItem(K,JSON.stringify({engine:'device',region:'',key:''}));location.reload()};" +
                 "window.onElevenSpeechError=(m)=>{const e=document.getElementById('toast');if(e){e.textContent='تعذر ElevenLabs: '+(m||'خطأ');e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),2200)}};" +
@@ -222,7 +224,7 @@ public class MainActivity extends AppCompatActivity {
             voicePrefs.edit().putString(P_KEY, key).putString(P_VOICE_ID, id).putString(P_VOICE_NAME, name).apply();
             dialog.dismiss();
             webView.evaluateJavascript("window.onElevenConfigured&&window.onElevenConfigured()", null);
-            executor.execute(() -> requestSpeech("هلا والله، صوت داقش جاهز. بعد كل جولة بعطيك ترتيب اللاعبين.", key, id));
+            executor.execute(() -> requestSpeech("هلا والله، صوت داقش جاهز. بعد كل جولة بعطيك أرصدة اللاعبين.", key, id));
         }));
 
         dialog.show();
