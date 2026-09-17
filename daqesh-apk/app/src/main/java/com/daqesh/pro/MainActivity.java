@@ -2,10 +2,10 @@ package com.daqesh.pro;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.media.MediaPlayer;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -36,6 +36,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -44,6 +45,8 @@ public class MainActivity extends AppCompatActivity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private MediaPlayer player;
     private SharedPreferences voicePrefs;
+    private TextToSpeech fallbackTts;
+    private volatile boolean ttsReady = false;
 
     private static final String PREFS = "eleven_voice";
     private static final String P_KEY = "api_key";
@@ -55,6 +58,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         voicePrefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        initFallbackTts();
+
         webView = new WebView(this);
         setContentView(webView);
 
@@ -85,6 +90,17 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void initFallbackTts() {
+        fallbackTts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                int r = fallbackTts.setLanguage(new Locale("ar", "SA"));
+                ttsReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED;
+                fallbackTts.setSpeechRate(0.90f);
+                fallbackTts.setPitch(0.90f);
+            }
+        });
+    }
+
     private void injectElevenLabsPatch() {
         String js = "(()=>{try{" +
                 "const K='daqesh_azure_voice_v1';" +
@@ -95,17 +111,17 @@ public class MainActivity extends AppCompatActivity {
                 "n.onclick=()=>{try{AndroidBridge.openVoiceSettings()}catch(e){}}}" +
                 "const rankWords=['الأول','الثاني','الثالث','الرابع','الخامس','السادس','السابع','الثامن','التاسع','العاشر'];" +
                 "function balancesText(){const cards=[...document.querySelectorAll('#cards .card')];if(!cards.length)return'';let t='أرصدة اللاعبين الحالية. ';cards.forEach((c,i)=>{const name=(c.querySelector('.pname')?.textContent||'').trim();const bal=(c.querySelector('.balance')?.textContent||'').trim();if(name)t+=(rankWords[i]?'المركز '+rankWords[i]+'، ':'')+name+'، معك '+bal+'. ';});const w=document.getElementById('winner');if(w&&!w.classList.contains('hidden'))t+=' '+(w.textContent||'');return t}" +
-                "const tb=document.querySelector('.toolbar');if(tb&&!document.getElementById('announceNowBtn')){const a=document.createElement('button');a.id='announceNowBtn';a.type='button';a.textContent='🔊 إعلان الأرصدة';a.className='primary';a.addEventListener('click',()=>{try{const t=balancesText();if(!t)return;AndroidBridge.speakEleven(t)}catch(e){}});tb.appendChild(a)}" +
-                "if(!window.__daqeshRoundDirect){document.addEventListener('click',e=>{const btn=e.target&&e.target.closest?e.target.closest('#saveRound'):null;if(!btn)return;setTimeout(()=>{try{if(!AndroidBridge.isElevenConfigured())return;const st=document.getElementById('soundToggle');if(st&&st.textContent.includes('متوقف'))return;const t=balancesText();if(t)AndroidBridge.speakEleven('خلصنا الجولة. '+t)}catch(err){}},700)},true);window.__daqeshRoundDirect=true}" +
+                "const tb=document.querySelector('.toolbar');if(tb&&!document.getElementById('announceNowBtn')){const a=document.createElement('button');a.id='announceNowBtn';a.type='button';a.textContent='🔊 إعلان الأرصدة';a.className='primary';a.addEventListener('click',()=>{try{const t=balancesText();if(t)AndroidBridge.speakSmart(t)}catch(e){}});tb.appendChild(a)}" +
+                "if(!window.__daqeshRoundDirect){document.addEventListener('click',e=>{const btn=e.target&&e.target.closest?e.target.closest('#saveRound'):null;if(!btn)return;setTimeout(()=>{try{const st=document.getElementById('soundToggle');if(st&&st.textContent.includes('متوقف'))return;const t=balancesText();if(t)AndroidBridge.speakSmart('خلصنا الجولة. '+t)}catch(err){}},800)},true);window.__daqeshRoundDirect=true}" +
                 "if(!window.__elevenFetchPatched){const oldFetch=window.fetch.bind(window);" +
                 "const silent=new Uint8Array([82,73,70,70,36,0,0,0,87,65,86,69,102,109,116,32,16,0,0,0,1,0,1,0,68,172,0,0,136,88,1,0,2,0,16,0,100,97,116,97,0,0,0,0]);" +
                 "window.fetch=async(u,o={})=>{const x=String(u||'');if(x.includes('.tts.speech.microsoft.com')){" +
                 "let t='';try{t=new DOMParser().parseFromString(String(o.body||''),'application/xml').documentElement.textContent||''}catch(e){t=String(o.body||'').replace(/<[^>]+>/g,' ')};" +
-                "if(!t.trim().startsWith('خلصنا الجولة')){try{AndroidBridge.speakEleven(t)}catch(e){}}" +
+                "if(!t.trim().startsWith('خلصنا الجولة')){try{AndroidBridge.speakSmart(t)}catch(e){}}" +
                 "return new Response(silent,{status:200,headers:{'Content-Type':'audio/wav'}})}return oldFetch(u,o)};window.__elevenFetchPatched=true}" +
                 "window.onElevenConfigured=()=>{localStorage.setItem(K,JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()};" +
                 "window.onElevenDisabled=()=>{localStorage.setItem(K,JSON.stringify({engine:'device',region:'',key:''}));location.reload()};" +
-                "window.onElevenSpeechError=(m)=>{const e=document.getElementById('toast');if(e){e.textContent='تعذر ElevenLabs: '+(m||'خطأ');e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),2200)}};" +
+                "window.onElevenSpeechError=(m)=>{const e=document.getElementById('toast');if(e){e.textContent='تم التحويل لصوت الجهاز تلقائياً';e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),2200)}};" +
                 "let ok=false;try{ok=AndroidBridge.isElevenConfigured()}catch(e){};" +
                 "let q={};try{q=JSON.parse(localStorage.getItem(K)||'{}')}catch(e){};" +
                 "if(ok&&(q.engine!=='hamed'||q.region!=='eleven'||q.key!=='eleven')){localStorage.setItem(K,JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()}" +
@@ -130,20 +146,28 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
-        public void speakEleven(String text) {
+        public void speakSmart(String text) {
             if (text == null || text.trim().isEmpty()) return;
             String key = voicePrefs.getString(P_KEY, "");
             String voiceId = voicePrefs.getString(P_VOICE_ID, "");
             if (key.isEmpty() || voiceId.isEmpty()) {
-                jsError("الإعداد غير مكتمل");
+                fallbackSpeak(text, false);
                 return;
             }
             executor.execute(() -> requestSpeech(text, key, voiceId));
         }
 
         @JavascriptInterface
+        public void speakEleven(String text) {
+            speakSmart(text);
+        }
+
+        @JavascriptInterface
         public void stopAudio() {
-            runOnUiThread(MainActivity.this::stopPlayer);
+            runOnUiThread(() -> {
+                stopPlayer();
+                if (fallbackTts != null) fallbackTts.stop();
+            });
         }
     }
 
@@ -154,7 +178,7 @@ public class MainActivity extends AppCompatActivity {
         box.setPadding(pad, pad / 2, pad, 0);
 
         TextView hint = new TextView(this);
-        hint.setText("ElevenLabs: أدخل مفتاح API ثم حمّل الأصوات واختر الصوت الذي يعجبك. ما تحتاج Region.");
+        hint.setText("ElevenLabs هو الصوت الأساسي. إذا تعذر الاتصال أو انتهى الرصيد، التطبيق يستخدم صوت الجهاز تلقائيًا بدل ما يسكت.");
         hint.setTextSize(15);
         box.addView(hint);
 
@@ -185,11 +209,11 @@ public class MainActivity extends AppCompatActivity {
         box.addView(load);
 
         Button device = new Button(this);
-        device.setText("الرجوع لصوت الجهاز");
+        device.setText("استخدام صوت الجهاز فقط");
         box.addView(device);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("إعداد صوت ElevenLabs")
+                .setTitle("إعداد الصوت")
                 .setView(box)
                 .setNegativeButton("إلغاء", null)
                 .setPositiveButton("حفظ واختبار", null)
@@ -210,6 +234,7 @@ public class MainActivity extends AppCompatActivity {
             voicePrefs.edit().clear().apply();
             dialog.dismiss();
             webView.evaluateJavascript("window.onElevenDisabled&&window.onElevenDisabled()", null);
+            fallbackSpeak("أبشر، صوت الجهاز شغال الحين.", false);
         });
 
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
@@ -275,7 +300,9 @@ public class MainActivity extends AppCompatActivity {
                 load.setText("تحميل الأصوات المتاحة");
                 Toast.makeText(this, "تعذر تحميل الأصوات: تأكد من المفتاح", Toast.LENGTH_LONG).show();
             });
-        } finally { if (c != null) c.disconnect(); }
+        } finally {
+            if (c != null) c.disconnect();
+        }
     }
 
     private void requestSpeech(String text, String key, String voiceId) {
@@ -297,41 +324,71 @@ public class MainActivity extends AppCompatActivity {
             byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
             c.getOutputStream().write(payload);
             int code = c.getResponseCode();
-            if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
+            if (code < 200 || code >= 300) {
+                String detail = "HTTP " + code;
+                try {
+                    InputStream err = c.getErrorStream();
+                    if (err != null) {
+                        String bodyText = readString(err);
+                        if (!bodyText.isEmpty()) detail += " " + bodyText.substring(0, Math.min(160, bodyText.length()));
+                    }
+                } catch (Exception ignored) {}
+                throw new Exception(detail);
+            }
             byte[] audio = readBytes(c.getInputStream());
+            if (audio.length < 100) throw new Exception("empty-audio");
             temp = File.createTempFile("daqesh_voice_", ".mp3", getCacheDir());
             try (FileOutputStream out = new FileOutputStream(temp)) { out.write(audio); }
             File finalTemp = temp;
-            runOnUiThread(() -> playFile(finalTemp));
+            runOnUiThread(() -> playFile(finalTemp, text));
         } catch (Exception e) {
-            jsError(e.getMessage());
             if (temp != null) temp.delete();
-        } finally { if (c != null) c.disconnect(); }
+            fallbackSpeak(text, true);
+        } finally {
+            if (c != null) c.disconnect();
+        }
     }
 
-    private void playFile(File file) {
+    private void playFile(File file, String fallbackText) {
         try {
             stopPlayer();
             player = new MediaPlayer();
             player.setDataSource(file.getAbsolutePath());
             player.setOnCompletionListener(mp -> { stopPlayer(); file.delete(); });
-            player.setOnErrorListener((mp, what, extra) -> { stopPlayer(); file.delete(); return true; });
+            player.setOnErrorListener((mp, what, extra) -> {
+                stopPlayer();
+                file.delete();
+                fallbackSpeak(fallbackText, true);
+                return true;
+            });
             player.prepare();
             player.start();
         } catch (Exception e) {
             file.delete();
-            jsError("تشغيل الصوت");
+            fallbackSpeak(fallbackText, true);
         }
     }
 
-    private void stopPlayer() {
-        try { if (player != null) { if (player.isPlaying()) player.stop(); player.release(); } } catch (Exception ignored) {}
-        player = null;
+    private void fallbackSpeak(String text, boolean notify) {
+        runOnUiThread(() -> {
+            if (notify) Toast.makeText(this, "ElevenLabs تعذر؛ استخدمت صوت الجهاز", Toast.LENGTH_SHORT).show();
+            if (fallbackTts != null && ttsReady) {
+                fallbackTts.stop();
+                fallbackTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "daqesh_" + System.currentTimeMillis());
+            } else {
+                Toast.makeText(this, "فعّل محرك تحويل النص إلى كلام في إعدادات الجوال", Toast.LENGTH_LONG).show();
+            }
+        });
     }
 
-    private void jsError(String msg) {
-        String safe = JSONObject.quote(msg == null ? "خطأ" : msg);
-        runOnUiThread(() -> webView.evaluateJavascript("window.onElevenSpeechError&&window.onElevenSpeechError(" + safe + ")", null));
+    private void stopPlayer() {
+        try {
+            if (player != null) {
+                if (player.isPlaying()) player.stop();
+                player.release();
+            }
+        } catch (Exception ignored) {}
+        player = null;
     }
 
     private static String readString(InputStream in) throws Exception {
@@ -351,6 +408,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         stopPlayer();
         executor.shutdownNow();
+        if (fallbackTts != null) {
+            fallbackTts.stop();
+            fallbackTts.shutdown();
+        }
         if (webView != null) webView.destroy();
         super.onDestroy();
     }
