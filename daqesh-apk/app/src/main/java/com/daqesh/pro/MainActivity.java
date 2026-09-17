@@ -24,7 +24,6 @@ import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -34,11 +33,16 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+import java.security.MessageDigest;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 public class MainActivity extends AppCompatActivity {
     private WebView webView;
@@ -48,10 +52,10 @@ public class MainActivity extends AppCompatActivity {
     private TextToSpeech fallbackTts;
     private volatile boolean ttsReady = false;
 
-    private static final String PREFS = "eleven_voice";
-    private static final String P_KEY = "api_key";
-    private static final String P_VOICE_ID = "voice_id";
-    private static final String P_VOICE_NAME = "voice_name";
+    private static final String PREFS = "aws_polly_voice";
+    private static final String P_ACCESS = "access_key";
+    private static final String P_SECRET = "secret_key";
+    private static final String P_REGION = "region";
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
@@ -76,7 +80,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectElevenLabsPatch();
+                injectVoicePatch();
             }
         });
         webView.loadUrl("https://daqesh-pro-apk-ready.vercel.app");
@@ -101,43 +105,23 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void injectElevenLabsPatch() {
+    private void injectVoicePatch() {
         String js = "(()=>{try{" +
-                "const K='daqesh_azure_voice_v1';" +
                 "const b=document.getElementById('voiceSettingsBtn');" +
-                "if(b&&!b.dataset.eleven){const n=b.cloneNode(true);n.dataset.eleven='1';" +
-                "let vn='';try{vn=AndroidBridge.getVoiceName()||''}catch(e){};" +
-                "n.textContent='🎙️ '+(vn||'ElevenLabs');b.replaceWith(n);" +
-                "n.onclick=()=>{try{AndroidBridge.openVoiceSettings()}catch(e){}}}" +
+                "if(b&&!b.dataset.polly){const n=b.cloneNode(true);n.dataset.polly='1';n.textContent='🎙️ Amazon Polly · Zayd';b.replaceWith(n);n.onclick=()=>{try{AndroidBridge.openVoiceSettings()}catch(e){}}}" +
                 "const rankWords=['الأول','الثاني','الثالث','الرابع','الخامس','السادس','السابع','الثامن','التاسع','العاشر'];" +
                 "function balancesText(){const cards=[...document.querySelectorAll('#cards .card')];if(!cards.length)return'';let t='أرصدة اللاعبين الحالية. ';cards.forEach((c,i)=>{const name=(c.querySelector('.pname')?.textContent||'').trim();const bal=(c.querySelector('.balance')?.textContent||'').trim();if(name)t+=(rankWords[i]?'المركز '+rankWords[i]+'، ':'')+name+'، معك '+bal+'. ';});const w=document.getElementById('winner');if(w&&!w.classList.contains('hidden'))t+=' '+(w.textContent||'');return t}" +
                 "const tb=document.querySelector('.toolbar');if(tb&&!document.getElementById('announceNowBtn')){const a=document.createElement('button');a.id='announceNowBtn';a.type='button';a.textContent='🔊 إعلان الأرصدة';a.className='primary';a.addEventListener('click',()=>{try{const t=balancesText();if(t)AndroidBridge.speakSmart(t)}catch(e){}});tb.appendChild(a)}" +
                 "if(!window.__daqeshRoundDirect){document.addEventListener('click',e=>{const btn=e.target&&e.target.closest?e.target.closest('#saveRound'):null;if(!btn)return;setTimeout(()=>{try{const st=document.getElementById('soundToggle');if(st&&st.textContent.includes('متوقف'))return;const t=balancesText();if(t)AndroidBridge.speakSmart('خلصنا الجولة. '+t)}catch(err){}},800)},true);window.__daqeshRoundDirect=true}" +
-                "if(!window.__elevenFetchPatched){const oldFetch=window.fetch.bind(window);" +
-                "const silent=new Uint8Array([82,73,70,70,36,0,0,0,87,65,86,69,102,109,116,32,16,0,0,0,1,0,1,0,68,172,0,0,136,88,1,0,2,0,16,0,100,97,116,97,0,0,0,0]);" +
-                "window.fetch=async(u,o={})=>{const x=String(u||'');if(x.includes('.tts.speech.microsoft.com')){" +
-                "let t='';try{t=new DOMParser().parseFromString(String(o.body||''),'application/xml').documentElement.textContent||''}catch(e){t=String(o.body||'').replace(/<[^>]+>/g,' ')};" +
-                "if(!t.trim().startsWith('خلصنا الجولة')){try{AndroidBridge.speakSmart(t)}catch(e){}}" +
-                "return new Response(silent,{status:200,headers:{'Content-Type':'audio/wav'}})}return oldFetch(u,o)};window.__elevenFetchPatched=true}" +
-                "window.onElevenConfigured=()=>{localStorage.setItem(K,JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()};" +
-                "window.onElevenDisabled=()=>{localStorage.setItem(K,JSON.stringify({engine:'device',region:'',key:''}));location.reload()};" +
-                "window.onElevenSpeechError=(m)=>{const e=document.getElementById('toast');if(e){e.textContent='تم التحويل لصوت الجهاز تلقائياً';e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),2200)}};" +
-                "let ok=false;try{ok=AndroidBridge.isElevenConfigured()}catch(e){};" +
-                "let q={};try{q=JSON.parse(localStorage.getItem(K)||'{}')}catch(e){};" +
-                "if(ok&&(q.engine!=='hamed'||q.region!=='eleven'||q.key!=='eleven')){localStorage.setItem(K,JSON.stringify({engine:'hamed',region:'eleven',key:'eleven'}));location.reload()}" +
+                "window.onCloudVoiceError=(m)=>{const e=document.getElementById('toast');if(e){e.textContent=m||'تعذر الصوت السحابي';e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),2600)}};" +
                 "}catch(e){console.log(e)}})();";
         webView.evaluateJavascript(js, null);
     }
 
     public class VoiceBridge {
         @JavascriptInterface
-        public boolean isElevenConfigured() {
-            return !voicePrefs.getString(P_KEY, "").isEmpty() && !voicePrefs.getString(P_VOICE_ID, "").isEmpty();
-        }
-
-        @JavascriptInterface
-        public String getVoiceName() {
-            return voicePrefs.getString(P_VOICE_NAME, "");
+        public boolean isCloudConfigured() {
+            return !voicePrefs.getString(P_ACCESS, "").isEmpty() && !voicePrefs.getString(P_SECRET, "").isEmpty();
         }
 
         @JavascriptInterface
@@ -148,18 +132,14 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void speakSmart(String text) {
             if (text == null || text.trim().isEmpty()) return;
-            String key = voicePrefs.getString(P_KEY, "");
-            String voiceId = voicePrefs.getString(P_VOICE_ID, "");
-            if (key.isEmpty() || voiceId.isEmpty()) {
+            String access = voicePrefs.getString(P_ACCESS, "");
+            String secret = voicePrefs.getString(P_SECRET, "");
+            String region = voicePrefs.getString(P_REGION, "eu-central-1");
+            if (access.isEmpty() || secret.isEmpty()) {
                 fallbackSpeak(text, false);
                 return;
             }
-            executor.execute(() -> requestSpeech(text, key, voiceId));
-        }
-
-        @JavascriptInterface
-        public void speakEleven(String text) {
-            speakSmart(text);
+            executor.execute(() -> requestPolly(text, access, secret, region));
         }
 
         @JavascriptInterface
@@ -178,172 +158,144 @@ public class MainActivity extends AppCompatActivity {
         box.setPadding(pad, pad / 2, pad, 0);
 
         TextView hint = new TextView(this);
-        hint.setText("ElevenLabs هو الصوت الأساسي. إذا تعذر الاتصال أو انتهى الرصيد، التطبيق يستخدم صوت الجهاز تلقائيًا بدل ما يسكت.");
+        hint.setText("الصوت: Amazon Polly Zayd — رجل خليجي Neural. إذا تعذر Polly يستخدم صوت الجهاز تلقائيًا.");
         hint.setTextSize(15);
         box.addView(hint);
 
-        EditText keyInput = new EditText(this);
-        keyInput.setHint("ElevenLabs API Key");
-        keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        keyInput.setText(voicePrefs.getString(P_KEY, ""));
-        box.addView(keyInput, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        EditText accessInput = new EditText(this);
+        accessInput.setHint("AWS Access Key ID");
+        accessInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        accessInput.setText(voicePrefs.getString(P_ACCESS, ""));
+        box.addView(accessInput, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        Spinner spinner = new Spinner(this);
-        List<String> labels = new ArrayList<>();
-        List<String> ids = new ArrayList<>();
-        String savedName = voicePrefs.getString(P_VOICE_NAME, "");
-        String savedId = voicePrefs.getString(P_VOICE_ID, "");
-        if (!savedId.isEmpty()) {
-            labels.add(savedName.isEmpty() ? "الصوت المحفوظ" : savedName);
-            ids.add(savedId);
-        } else {
-            labels.add("اضغط تحميل الأصوات");
-            ids.add("");
-        }
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, labels);
-        spinner.setAdapter(adapter);
-        box.addView(spinner);
+        EditText secretInput = new EditText(this);
+        secretInput.setHint("AWS Secret Access Key");
+        secretInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        secretInput.setText(voicePrefs.getString(P_SECRET, ""));
+        box.addView(secretInput, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        Button load = new Button(this);
-        load.setText("تحميل الأصوات المتاحة");
-        box.addView(load);
+        Spinner regionSpinner = new Spinner(this);
+        String[] regions = {"eu-central-1", "us-east-1", "eu-west-2", "us-west-2"};
+        ArrayAdapter<String> regionAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, regions);
+        regionSpinner.setAdapter(regionAdapter);
+        String savedRegion = voicePrefs.getString(P_REGION, "eu-central-1");
+        for (int i = 0; i < regions.length; i++) if (regions[i].equals(savedRegion)) regionSpinner.setSelection(i);
+        box.addView(regionSpinner);
 
         Button device = new Button(this);
         device.setText("استخدام صوت الجهاز فقط");
         box.addView(device);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("إعداد الصوت")
+                .setTitle("إعداد Amazon Polly")
                 .setView(box)
                 .setNegativeButton("إلغاء", null)
                 .setPositiveButton("حفظ واختبار", null)
                 .create();
 
-        load.setOnClickListener(v -> {
-            String key = keyInput.getText().toString().trim();
-            if (key.isEmpty()) {
-                Toast.makeText(this, "أدخل API Key أولًا", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            load.setEnabled(false);
-            load.setText("جاري التحميل...");
-            executor.execute(() -> loadVoices(key, labels, ids, adapter, spinner, load));
-        });
-
         device.setOnClickListener(v -> {
             voicePrefs.edit().clear().apply();
             dialog.dismiss();
-            webView.evaluateJavascript("window.onElevenDisabled&&window.onElevenDisabled()", null);
             fallbackSpeak("أبشر، صوت الجهاز شغال الحين.", false);
         });
 
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String key = keyInput.getText().toString().trim();
-            int pos = spinner.getSelectedItemPosition();
-            String id = pos >= 0 && pos < ids.size() ? ids.get(pos) : "";
-            String name = pos >= 0 && pos < labels.size() ? labels.get(pos) : "";
-            if (key.isEmpty() || id.isEmpty()) {
-                Toast.makeText(this, "أدخل المفتاح ثم حمّل واختر صوتًا", Toast.LENGTH_SHORT).show();
+            String access = accessInput.getText().toString().trim();
+            String secret = secretInput.getText().toString().trim();
+            String region = String.valueOf(regionSpinner.getSelectedItem());
+            if (access.isEmpty() || secret.isEmpty()) {
+                Toast.makeText(this, "أدخل Access Key و Secret Key", Toast.LENGTH_SHORT).show();
                 return;
             }
-            voicePrefs.edit().putString(P_KEY, key).putString(P_VOICE_ID, id).putString(P_VOICE_NAME, name).apply();
+            voicePrefs.edit().putString(P_ACCESS, access).putString(P_SECRET, secret).putString(P_REGION, region).apply();
             dialog.dismiss();
-            webView.evaluateJavascript("window.onElevenConfigured&&window.onElevenConfigured()", null);
-            executor.execute(() -> requestSpeech("هلا والله، صوت داقش جاهز. بعد كل جولة بعطيك أرصدة اللاعبين.", key, id));
+            executor.execute(() -> requestPolly("هلا والله، صوت داقش جاهز. بعد كل جولة بعطيك أرصدة اللاعبين.", access, secret, region));
         }));
 
         dialog.show();
     }
 
-    private void loadVoices(String key, List<String> labels, List<String> ids, ArrayAdapter<String> adapter, Spinner spinner, Button load) {
-        HttpURLConnection c = null;
-        try {
-            c = (HttpURLConnection) new URL("https://api.elevenlabs.io/v2/voices?page_size=30").openConnection();
-            c.setRequestMethod("GET");
-            c.setConnectTimeout(15000);
-            c.setReadTimeout(20000);
-            c.setRequestProperty("xi-api-key", key);
-            int code = c.getResponseCode();
-            if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
-            String json = readString(c.getInputStream());
-            JSONArray arr = new JSONObject(json).optJSONArray("voices");
-            List<String> newLabels = new ArrayList<>();
-            List<String> newIds = new ArrayList<>();
-            if (arr != null) {
-                for (int i = 0; i < arr.length(); i++) {
-                    JSONObject o = arr.optJSONObject(i);
-                    if (o == null) continue;
-                    String id = o.optString("voice_id", "");
-                    String name = o.optString("name", "Voice");
-                    JSONObject labs = o.optJSONObject("labels");
-                    String gender = labs == null ? "" : labs.optString("gender", "");
-                    String accent = labs == null ? "" : labs.optString("accent", "");
-                    if (!id.isEmpty()) {
-                        newIds.add(id);
-                        newLabels.add(name + (gender.isEmpty() ? "" : " · " + gender) + (accent.isEmpty() ? "" : " · " + accent));
-                    }
-                }
-            }
-            runOnUiThread(() -> {
-                labels.clear(); ids.clear();
-                labels.addAll(newLabels); ids.addAll(newIds);
-                if (labels.isEmpty()) { labels.add("لم يتم العثور على أصوات"); ids.add(""); }
-                adapter.notifyDataSetChanged();
-                spinner.setSelection(0);
-                load.setEnabled(true);
-                load.setText("إعادة تحميل الأصوات");
-                Toast.makeText(this, "تم تحميل " + newIds.size() + " صوت", Toast.LENGTH_SHORT).show();
-            });
-        } catch (Exception e) {
-            runOnUiThread(() -> {
-                load.setEnabled(true);
-                load.setText("تحميل الأصوات المتاحة");
-                Toast.makeText(this, "تعذر تحميل الأصوات: تأكد من المفتاح", Toast.LENGTH_LONG).show();
-            });
-        } finally {
-            if (c != null) c.disconnect();
-        }
-    }
-
-    private void requestSpeech(String text, String key, String voiceId) {
+    private void requestPolly(String text, String accessKey, String secretKey, String region) {
         HttpURLConnection c = null;
         File temp = null;
         try {
-            String endpoint = "https://api.elevenlabs.io/v1/text-to-speech/" + voiceId + "?output_format=mp3_44100_128";
+            String service = "polly";
+            String host = "polly." + region + ".amazonaws.com";
+            String endpoint = "https://" + host + "/v1/speech";
+
+            JSONObject bodyObj = new JSONObject();
+            bodyObj.put("Engine", "neural");
+            bodyObj.put("LanguageCode", "ar-AE");
+            bodyObj.put("OutputFormat", "mp3");
+            bodyObj.put("SampleRate", "24000");
+            bodyObj.put("Text", text);
+            bodyObj.put("TextType", "text");
+            bodyObj.put("VoiceId", "Zayd");
+            String body = bodyObj.toString();
+            byte[] payload = body.getBytes(StandardCharsets.UTF_8);
+
+            Date now = new Date();
+            SimpleDateFormat amzFmt = new SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US);
+            SimpleDateFormat dateFmt = new SimpleDateFormat("yyyyMMdd", Locale.US);
+            TimeZone utc = TimeZone.getTimeZone("UTC");
+            amzFmt.setTimeZone(utc);
+            dateFmt.setTimeZone(utc);
+            String amzDate = amzFmt.format(now);
+            String dateStamp = dateFmt.format(now);
+
+            String payloadHash = sha256Hex(payload);
+            String canonicalHeaders = "content-type:application/json\n" + "host:" + host + "\n" + "x-amz-date:" + amzDate + "\n";
+            String signedHeaders = "content-type;host;x-amz-date";
+            String canonicalRequest = "POST\n/v1/speech\n\n" + canonicalHeaders + "\n" + signedHeaders + "\n" + payloadHash;
+            String credentialScope = dateStamp + "/" + region + "/" + service + "/aws4_request";
+            String stringToSign = "AWS4-HMAC-SHA256\n" + amzDate + "\n" + credentialScope + "\n" + sha256Hex(canonicalRequest.getBytes(StandardCharsets.UTF_8));
+
+            byte[] kDate = hmac(("AWS4" + secretKey).getBytes(StandardCharsets.UTF_8), dateStamp);
+            byte[] kRegion = hmac(kDate, region);
+            byte[] kService = hmac(kRegion, service);
+            byte[] kSigning = hmac(kService, "aws4_request");
+            String signature = toHex(hmac(kSigning, stringToSign));
+            String authorization = "AWS4-HMAC-SHA256 Credential=" + accessKey + "/" + credentialScope + ", SignedHeaders=" + signedHeaders + ", Signature=" + signature;
+
             c = (HttpURLConnection) new URL(endpoint).openConnection();
             c.setRequestMethod("POST");
             c.setDoOutput(true);
             c.setConnectTimeout(15000);
             c.setReadTimeout(30000);
-            c.setRequestProperty("xi-api-key", key);
             c.setRequestProperty("Content-Type", "application/json");
             c.setRequestProperty("Accept", "audio/mpeg");
-            JSONObject body = new JSONObject();
-            body.put("text", text);
-            body.put("model_id", "eleven_multilingual_v2");
-            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
-            c.getOutputStream().write(payload);
+            c.setRequestProperty("Host", host);
+            c.setRequestProperty("X-Amz-Date", amzDate);
+            c.setRequestProperty("Authorization", authorization);
+            try (java.io.OutputStream os = c.getOutputStream()) { os.write(payload); }
+
             int code = c.getResponseCode();
             if (code < 200 || code >= 300) {
-                String detail = "HTTP " + code;
+                String err = "HTTP " + code;
                 try {
-                    InputStream err = c.getErrorStream();
-                    if (err != null) {
-                        String bodyText = readString(err);
-                        if (!bodyText.isEmpty()) detail += " " + bodyText.substring(0, Math.min(160, bodyText.length()));
+                    InputStream eis = c.getErrorStream();
+                    if (eis != null) {
+                        String detail = new String(readBytes(eis), StandardCharsets.UTF_8);
+                        if (!detail.isEmpty()) err += " " + detail.substring(0, Math.min(detail.length(), 220));
                     }
                 } catch (Exception ignored) {}
-                throw new Exception(detail);
+                throw new Exception(err);
             }
+
             byte[] audio = readBytes(c.getInputStream());
             if (audio.length < 100) throw new Exception("empty-audio");
-            temp = File.createTempFile("daqesh_voice_", ".mp3", getCacheDir());
+            temp = File.createTempFile("daqesh_polly_", ".mp3", getCacheDir());
             try (FileOutputStream out = new FileOutputStream(temp)) { out.write(audio); }
             File finalTemp = temp;
             runOnUiThread(() -> playFile(finalTemp, text));
         } catch (Exception e) {
             if (temp != null) temp.delete();
-            fallbackSpeak(text, true);
+            final String msg = e.getMessage() == null ? "تعذر Amazon Polly" : e.getMessage();
+            runOnUiThread(() -> {
+                Toast.makeText(this, "Polly تعذر؛ تم استخدام صوت الجهاز", Toast.LENGTH_SHORT).show();
+                webView.evaluateJavascript("window.onCloudVoiceError&&window.onCloudVoiceError(" + JSONObject.quote(msg) + ")", null);
+            });
+            fallbackSpeak(text, false);
         } finally {
             if (c != null) c.disconnect();
         }
@@ -352,26 +304,27 @@ public class MainActivity extends AppCompatActivity {
     private void playFile(File file, String fallbackText) {
         try {
             stopPlayer();
+            if (fallbackTts != null) fallbackTts.stop();
             player = new MediaPlayer();
             player.setDataSource(file.getAbsolutePath());
             player.setOnCompletionListener(mp -> { stopPlayer(); file.delete(); });
             player.setOnErrorListener((mp, what, extra) -> {
                 stopPlayer();
                 file.delete();
-                fallbackSpeak(fallbackText, true);
+                fallbackSpeak(fallbackText, false);
                 return true;
             });
             player.prepare();
             player.start();
         } catch (Exception e) {
             file.delete();
-            fallbackSpeak(fallbackText, true);
+            fallbackSpeak(fallbackText, false);
         }
     }
 
     private void fallbackSpeak(String text, boolean notify) {
         runOnUiThread(() -> {
-            if (notify) Toast.makeText(this, "ElevenLabs تعذر؛ استخدمت صوت الجهاز", Toast.LENGTH_SHORT).show();
+            if (notify) Toast.makeText(this, "استخدمت صوت الجهاز", Toast.LENGTH_SHORT).show();
             if (fallbackTts != null && ttsReady) {
                 fallbackTts.stop();
                 fallbackTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "daqesh_" + System.currentTimeMillis());
@@ -391,8 +344,21 @@ public class MainActivity extends AppCompatActivity {
         player = null;
     }
 
-    private static String readString(InputStream in) throws Exception {
-        return new String(readBytes(in), StandardCharsets.UTF_8);
+    private static byte[] hmac(byte[] key, String data) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        return mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String sha256Hex(byte[] data) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        return toHex(md.digest(data));
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) sb.append(String.format(Locale.US, "%02x", b & 0xff));
+        return sb.toString();
     }
 
     private static byte[] readBytes(InputStream in) throws Exception {
